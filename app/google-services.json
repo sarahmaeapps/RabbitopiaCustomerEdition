@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "8749398516",
+    "project_id": "rabbitopia-834e8",
+    "storage_bucket": "rabbitopia-834e8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:8749398516:android:7d388f7b3477396142a1a1",
+        "android_client_info": {
+          "package_name": "com.sarahmaeapps.rabbitopia"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "8749398516-23j7k6e9pk2pqp5cddcnlu85ld3li6cm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDX_TSGRZIfY2EaiXW_DEDIulnEcmhKzmk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "8749398516-23j7k6e9pk2pqp5cddcnlu85ld3li6cm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:8749398516:android:7e17704cd390bb2642a1a1",
+        "android_client_info": {
+          "package_name": "com.sarahmaeapps.rabbitopiacustomer"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "8749398516-23j7k6e9pk2pqp5cddcnlu85ld3li6cm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDX_TSGRZIfY2EaiXW_DEDIulnEcmhKzmk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "8749398516-23j7k6e9pk2pqp5cddcnlu85ld3li6cm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
