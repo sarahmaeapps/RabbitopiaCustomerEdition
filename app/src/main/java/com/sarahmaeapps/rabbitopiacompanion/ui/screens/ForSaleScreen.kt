@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,9 +16,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.sarahmaeapps.rabbitopiacompanion.data.model.MarketplaceItem
 import com.sarahmaeapps.rabbitopiacompanion.data.model.Rabbit
 import com.sarahmaeapps.rabbitopiacompanion.ui.components.RabbitBackground
 import com.sarahmaeapps.rabbitopiacompanion.ui.viewmodel.RabbitViewModel
@@ -30,7 +33,11 @@ fun ForSaleScreen(
     viewModel: RabbitViewModel
 ) {
     val forSaleRabbits by viewModel.forSaleRabbits.collectAsState()
+    val marketplaceItems by viewModel.marketplaceItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    val tabs = listOf("Animals For Sale", "Non-Animal Items")
 
     LaunchedEffect(Unit) {
         viewModel.loadRabbitsForSale()
@@ -40,40 +47,113 @@ fun ForSaleScreen(
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(
+                Column {
+                    TopAppBar(
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        title = { Text("Marketplace") },
+                        navigationIcon = {
+                            IconButton(onClick = onBackClick) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
+                        }
+                    )
+                    TabRow(
+                        selectedTabIndex = selectedTabIndex,
                         containerColor = Color.Transparent,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    title = { Text("Animals For Sale") },
-                    navigationIcon = {
-                        IconButton(onClick = onBackClick) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        contentColor = Color.White,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
+                                color = Color.White
+                            )
+                        }
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedTabIndex == index,
+                                onClick = { selectedTabIndex = index },
+                                text = { Text(title, fontSize = 12.sp) }
+                            )
                         }
                     }
-                )
+                }
             }
         ) { padding ->
             Box(modifier = Modifier.padding(padding).fillMaxSize()) {
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                } else if (forSaleRabbits.isEmpty()) {
-                    Text(
-                        text = "No animals currently for sale.",
-                        modifier = Modifier.align(Alignment.Center),
-                        color = Color.White
-                    )
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(forSaleRabbits) { rabbit ->
-                            ForSaleRabbitItem(rabbit = rabbit, onClick = { onRabbitClick(rabbit.id) })
-                        }
+                    when (selectedTabIndex) {
+                        0 -> AnimalsTab(forSaleRabbits, onRabbitClick)
+                        1 -> NonAnimalsTab(marketplaceItems)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimalsTab(rabbits: List<Rabbit>, onRabbitClick: (String) -> Unit) {
+    if (rabbits.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No animals currently for sale.", color = Color.White)
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(rabbits) { rabbit ->
+                ForSaleRabbitItem(rabbit = rabbit, onClick = { onRabbitClick(rabbit.id) })
+            }
+        }
+    }
+}
+
+@Composable
+fun NonAnimalsTab(items: List<MarketplaceItem>) {
+    if (items.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No items currently for sale.", color = Color.White)
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(items) { item ->
+                MarketplaceListItem(item = item)
+            }
+        }
+    }
+}
+
+@Composable
+fun MarketplaceListItem(item: MarketplaceItem) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
+    ) {
+        Row(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+            if (!item.imageUrl.isNullOrEmpty()) {
+                AsyncImage(
+                    model = item.imageUrl,
+                    contentDescription = item.name,
+                    modifier = Modifier.size(80.dp).clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = item.name, style = MaterialTheme.typography.titleLarge)
+                Text(text = item.description, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                Text(text = "$${item.price}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             }
         }
     }

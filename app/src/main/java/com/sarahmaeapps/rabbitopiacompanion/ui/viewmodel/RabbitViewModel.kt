@@ -2,6 +2,7 @@ package com.sarahmaeapps.rabbitopiacompanion.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sarahmaeapps.rabbitopiacompanion.data.model.MarketplaceItem
 import com.sarahmaeapps.rabbitopiacompanion.data.model.Rabbit
 import com.sarahmaeapps.rabbitopiacompanion.data.repository.FirebaseRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,8 +21,14 @@ class RabbitViewModel : ViewModel() {
     private val _forSaleRabbits = MutableStateFlow<List<Rabbit>>(emptyList())
     val forSaleRabbits: StateFlow<List<Rabbit>> = _forSaleRabbits
 
+    private val _marketplaceItems = MutableStateFlow<List<MarketplaceItem>>(emptyList())
+    val marketplaceItems: StateFlow<List<MarketplaceItem>> = _marketplaceItems
+
     private val _wishListRabbits = MutableStateFlow<List<Rabbit>>(emptyList())
     val wishListRabbits: StateFlow<List<Rabbit>> = _wishListRabbits
+
+    private val _selectedRabbit = MutableStateFlow<Rabbit?>(null)
+    val selectedRabbit: StateFlow<Rabbit?> = _selectedRabbit
 
     fun loadRabbits() {
         val email = repository.getCurrentUserEmail() ?: return
@@ -35,8 +42,8 @@ class RabbitViewModel : ViewModel() {
     fun loadRabbitsForSale() {
         viewModelScope.launch {
             _isLoading.value = true
-            val rabbits = repository.getRabbitsForSale()
-            _forSaleRabbits.value = rabbits
+            _forSaleRabbits.value = repository.getRabbitsForSale()
+            _marketplaceItems.value = repository.getMarketplaceItems()
             _isLoading.value = false
         }
     }
@@ -47,6 +54,12 @@ class RabbitViewModel : ViewModel() {
             _isLoading.value = true
             _wishListRabbits.value = repository.getWishList(email)
             _isLoading.value = false
+        }
+    }
+
+    fun selectRabbit(id: String) {
+        viewModelScope.launch {
+            _selectedRabbit.value = repository.getFullRabbitData(id)
         }
     }
 

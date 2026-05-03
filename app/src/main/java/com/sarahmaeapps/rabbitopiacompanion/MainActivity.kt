@@ -19,6 +19,7 @@ import com.sarahmaeapps.rabbitopiacompanion.ui.screens.*
 import com.sarahmaeapps.rabbitopiacompanion.ui.theme.RabbitopiaCompanionTheme
 import com.sarahmaeapps.rabbitopiacompanion.ui.viewmodel.RabbitViewModel
 import com.sarahmaeapps.rabbitopiacompanion.ui.viewmodel.MessagingViewModel
+import com.sarahmaeapps.rabbitopiacompanion.ui.viewmodel.LocalViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,6 +66,7 @@ fun RabbitopiaApp() {
     val navController = rememberNavController()
     val auth = FirebaseAuth.getInstance()
     val rabbitViewModel: RabbitViewModel = viewModel()
+    val localViewModel: LocalViewModel = viewModel()
     
     // Request Permissions on load
     RequestPermissions()
@@ -95,6 +97,9 @@ fun RabbitopiaApp() {
                 onRabbitClick = { rabbitId ->
                     navController.navigate(Screen.RabbitDetail.createRoute(rabbitId, "my_rabbits"))
                 },
+                onHousingClick = { navController.navigate(Screen.Housing.route) },
+                onFeedClick = { navController.navigate(Screen.Feed.route) },
+                onMedicalHealthClick = { navController.navigate(Screen.MedicalHealth.route) },
                 viewModel = rabbitViewModel
             )
         }
@@ -112,18 +117,16 @@ fun RabbitopiaApp() {
                 isFromMyRabbits = source == "my_rabbits"
             )
         }
-        composable(Screen.WeighIns.route) { backStackEntry ->
-            val rabbitId = backStackEntry.arguments?.getString("rabbitId") ?: ""
-            val rabbit = rabbitViewModel.getRabbitById(rabbitId)
+        composable(Screen.WeighIns.route) {
+            val rabbit = rabbitViewModel.selectedRabbit.collectAsState().value
             RabbitDataListScreen(
                 title = "Weigh-In's",
                 data = rabbit?.weighIns?.map { it.date to it.weight } ?: emptyList(),
                 onBackClick = { navController.popBackStack() }
             )
         }
-        composable(Screen.MedicalRecords.route) { backStackEntry ->
-            val rabbitId = backStackEntry.arguments?.getString("rabbitId") ?: ""
-            val rabbit = rabbitViewModel.getRabbitById(rabbitId)
+        composable(Screen.MedicalRecords.route) {
+            val rabbit = rabbitViewModel.selectedRabbit.collectAsState().value
             RabbitDataListScreen(
                 title = "Medical Records",
                 data = rabbit?.medicalRecords?.map { it.date to it.note } ?: emptyList(),
@@ -154,29 +157,55 @@ fun RabbitopiaApp() {
                 viewModel = rabbitViewModel
             )
         }
-        composable(Screen.SopHistory.route) { backStackEntry ->
-            val rabbitId = backStackEntry.arguments?.getString("rabbitId") ?: ""
-            val rabbit = rabbitViewModel.getRabbitById(rabbitId)
+        composable(Screen.SopHistory.route) {
+            val rabbit = rabbitViewModel.selectedRabbit.collectAsState().value
             RabbitDataListScreen(
                 title = "Evaluation History",
                 data = rabbit?.sopEvaluations?.map { it.date to it.score } ?: emptyList(),
                 onBackClick = { navController.popBackStack() },
                 onItemClick = { index -> 
                     val date = rabbit?.sopEvaluations?.getOrNull(index)?.date ?: ""
-                    navController.navigate(Screen.SopDetail.createRoute(rabbitId, date))
+                    navController.navigate(Screen.SopDetail.createRoute(rabbit?.id ?: "", date))
                 }
             )
         }
         composable(Screen.SopDetail.route) { backStackEntry ->
-            val rabbitId = backStackEntry.arguments?.getString("rabbitId") ?: ""
             val date = backStackEntry.arguments?.getString("evaluationDate") ?: ""
-            val rabbit = rabbitViewModel.getRabbitById(rabbitId)
+            val rabbit = rabbitViewModel.selectedRabbit.collectAsState().value
             val evaluation = rabbit?.sopEvaluations?.find { it.date == date }
             
             RabbitDataListScreen(
                 title = "Evaluation Details ($date)",
                 data = evaluation?.checklist?.toList() ?: emptyList(),
                 onBackClick = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.Housing.route) {
+            HousingScreen(
+                onBackClick = { navController.popBackStack() },
+                onHousingClick = { hutchId -> navController.navigate(Screen.HousingDetail.createRoute(hutchId)) },
+                viewModel = localViewModel
+            )
+        }
+        composable(Screen.HousingDetail.route) { backStackEntry ->
+            val hutchId = backStackEntry.arguments?.getString("hutchId") ?: ""
+            HousingDetailScreen(
+                hutchId = hutchId,
+                onBackClick = { navController.popBackStack() },
+                viewModel = localViewModel
+            )
+        }
+        composable(Screen.Feed.route) {
+            FeedScreen(
+                onBackClick = { navController.popBackStack() },
+                viewModel = localViewModel
+            )
+        }
+        composable(Screen.MedicalHealth.route) {
+            MedicalHealthScreen(
+                onBackClick = { navController.popBackStack() },
+                localViewModel = localViewModel,
+                rabbitViewModel = rabbitViewModel
             )
         }
     }

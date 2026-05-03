@@ -23,4 +23,10 @@ sealed class Screen(val route: String) {
     object SopDetail : Screen("sop_detail/{rabbitId}/{evaluationDate}") {
         fun createRoute(rabbitId: String, evaluationDate: String) = "sop_detail/$rabbitId/$evaluationDate"
     }
+    object Housing : Screen("housing")
+    object HousingDetail : Screen("housing_detail/{hutchId}") {
+        fun createRoute(hutchId: String) = "housing_detail/$hutchId"
+    }
+    object Feed : Screen("feed")
+    object MedicalHealth : Screen("medical_health")
 }

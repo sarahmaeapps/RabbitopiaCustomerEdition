@@ -41,7 +41,12 @@ fun RabbitDetailScreen(
     viewModel: RabbitViewModel,
     isFromMyRabbits: Boolean = false
 ) {
-    val rabbit = viewModel.getRabbitById(rabbitId)
+    val rabbitState by viewModel.selectedRabbit.collectAsState()
+    val rabbit = rabbitState
+    
+    LaunchedEffect(rabbitId) {
+        viewModel.selectRabbit(rabbitId)
+    }
     
     // Editable states for local data
     var editedGrade by remember(rabbit) { mutableStateOf(rabbit?.grade ?: "") }
@@ -160,10 +165,7 @@ fun RabbitDetailScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            DetailRow("Status", rabbit.status)
-                            DetailRow("Source", rabbit.source)
-                        }
+                        DetailRow("Status", rabbit.status)
                         GenerationBox(rabbit.generation)
                     }
 

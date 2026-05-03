@@ -4,10 +4,14 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import com.sarahmaeapps.rabbitopiacompanion.data.model.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import java.util.Locale
 
 class FirebaseRepository {
     private val auth = FirebaseAuth.getInstance()
@@ -35,37 +39,41 @@ class FirebaseRepository {
             if (salesSnapshot.isEmpty) return emptyList()
 
             // Map sales to rabbits and set purchase date from sale record
-            salesSnapshot.documents.map { saleDoc ->
-                val rabbitId = saleDoc.getString("rabbitId") ?: ""
-                val saleDate = saleDoc.getLong("date") ?: 0L
-                val rabbit = getRabbitWithPedigree(rabbitId)
-                
-                // Fetch local overrides/notes
-                val localDoc = db.collection("local_data")
-                    .document(emailLower)
-                    .collection("rabbits")
-                    .document(rabbitId)
-                    .get()
-                    .await()
-                
-                val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
-                val formattedDate = if (saleDate > 0) sdf.format(java.util.Date(saleDate)) else "Unknown"
-                
-                val baseRabbit = rabbit.copy(purchaseDate = formattedDate, status = "Purchased")
-                
-                if (localDoc.exists()) {
-                    val localRabbit = mapDocumentToRabbit(localDoc)
-                    baseRabbit.copy(
-                        grade = localRabbit?.grade?.ifEmpty { baseRabbit.grade } ?: baseRabbit.grade,
-                        arbaScore = localRabbit?.arbaScore?.ifEmpty { baseRabbit.arbaScore } ?: baseRabbit.arbaScore,
-                        notes = localRabbit?.notes?.ifEmpty { baseRabbit.notes } ?: baseRabbit.notes,
-                        weighIns = localRabbit?.weighIns?.ifEmpty { baseRabbit.weighIns } ?: baseRabbit.weighIns,
-                        medicalRecords = localRabbit?.medicalRecords?.ifEmpty { baseRabbit.medicalRecords } ?: baseRabbit.medicalRecords,
-                        sopScore = localRabbit?.sopScore?.ifEmpty { baseRabbit.sopScore } ?: baseRabbit.sopScore
-                    )
-                } else {
-                    baseRabbit
-                }
+            coroutineScope {
+                salesSnapshot.documents.map { saleDoc ->
+                    async {
+                        val rabbitId = saleDoc.getString("rabbitId") ?: ""
+                        val saleDate = saleDoc.getLong("date") ?: 0L
+                        val rabbit = getFullRabbitData(rabbitId)
+                        
+                        // Fetch local overrides/notes
+                        val localDoc = db.collection("local_data")
+                            .document(emailLower)
+                            .collection("rabbits")
+                            .document(rabbitId)
+                            .get()
+                            .await()
+                        
+                        val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+                        val formattedDate = if (saleDate > 0) sdf.format(java.util.Date(saleDate)) else "Unknown"
+                        
+                        val baseRabbit = rabbit.copy(purchaseDate = formattedDate, status = "Purchased")
+                        
+                        if (localDoc.exists()) {
+                            val localRabbit = mapDocumentToRabbit(localDoc)
+                            baseRabbit.copy(
+                                grade = localRabbit?.grade?.ifEmpty { baseRabbit.grade } ?: baseRabbit.grade,
+                                arbaScore = localRabbit?.arbaScore?.ifEmpty { baseRabbit.arbaScore } ?: baseRabbit.arbaScore,
+                                notes = localRabbit?.notes?.ifEmpty { baseRabbit.notes } ?: baseRabbit.notes,
+                                weighIns = localRabbit?.weighIns?.ifEmpty { baseRabbit.weighIns } ?: baseRabbit.weighIns,
+                                medicalRecords = localRabbit?.medicalRecords?.ifEmpty { baseRabbit.medicalRecords } ?: baseRabbit.medicalRecords,
+                                sopScore = localRabbit?.sopScore?.ifEmpty { baseRabbit.sopScore } ?: baseRabbit.sopScore
+                            )
+                        } else {
+                            baseRabbit
+                        }
+                    }
+                }.awaitAll()
             }
         } catch (e: Exception) {
             emptyList()
@@ -74,9 +82,6 @@ class FirebaseRepository {
 
     suspend fun updateRabbit(rabbit: Rabbit) {
         try {
-            // Determine if it's a "My Rabbit" or "Wishlist" update
-            // For simplicity, we'll allow updating the main 'rabbits' collection 
-            // but also a 'local_rabbits' collection for customer-specific notes
             val email = getCurrentUserEmail() ?: return
             
             db.collection("local_data")
@@ -90,73 +95,102 @@ class FirebaseRepository {
         }
     }
 
-    private suspend fun getRabbitWithPedigree(rabbitId: String): Rabbit {
+    suspend fun getFullRabbitData(rabbitId: String): Rabbit {
         val doc = db.collection("rabbits").document(rabbitId).get().await()
         val baseRabbit = mapDocumentToRabbit(doc) ?: Rabbit(id = rabbitId)
         
-        // Fetch evaluations from 'sop_evaluations' collection
-        val evaluations = try {
-            // Case 1: Search by field 'rabbitId'
-            val evalsSnapshot = db.collection("sop_evaluations")
-                .whereEqualTo("rabbitId", rabbitId)
-                .get()
-                .await()
-            
-            val fromField = evalsSnapshot.documents.mapNotNull { evalDoc ->
-                SopEvaluation(
-                    date = evalDoc.getString("date") ?: "",
-                    score = evalDoc.getString("score") ?: evalDoc.getLong("totalScore")?.toString() ?: "0",
-                    checklist = (evalDoc.get("checklist") as? Map<String, String>) ?: emptyMap()
-                )
-            }
-
-            // Case 2: Check if there's a subcollection under a doc named rabbitId
-            val subSnapshot = db.collection("sop_evaluations")
-                .document(rabbitId)
-                .collection("evaluations")
-                .get()
-                .await()
-            
-            val fromSub = subSnapshot.documents.mapNotNull { evalDoc ->
-                SopEvaluation(
-                    date = evalDoc.getString("date") ?: evalDoc.id,
-                    score = evalDoc.getString("score") ?: evalDoc.get("totalScore")?.toString() ?: evalDoc.get("score")?.toString() ?: "0",
-                    checklist = (evalDoc.get("checklist") as? Map<String, String>) ?: emptyMap()
-                )
-            }
-
-            // Case 3: Check the document itself (if evaluations are stored directly by rabbitId)
-            val directDoc = db.collection("sop_evaluations").document(rabbitId).get().await()
-            val fromDirect = if (directDoc.exists()) {
-                listOf(SopEvaluation(
-                    date = directDoc.getString("date") ?: "Latest",
-                    score = directDoc.getString("score") ?: directDoc.get("totalScore")?.toString() ?: directDoc.get("score")?.toString() ?: "0",
-                    checklist = (directDoc.get("checklist") as? Map<String, String>) ?: emptyMap()
-                ))
-            } else emptyList()
-
-            (fromField + fromSub + fromDirect).distinctBy { it.date }.sortedByDescending { it.date }
-        } catch (e: Exception) {
-            emptyList()
-        }
-
-        val latestScore = if (evaluations.isNotEmpty()) {
-            val score = evaluations.first().score
-            if (score.contains("/")) score else "$score/100"
+        // Fetch evaluations
+        val evaluations = fetchSopEvaluations(rabbitId)
+        
+        // Calculate average score if evaluations exist
+        val averageScore = if (evaluations.isNotEmpty()) {
+            val scores = evaluations.mapNotNull { it.score.replace("/100", "").toDoubleOrNull() }
+            if (scores.isEmpty()) "0/100" else "${String.format(Locale.getDefault(), "%.1f", scores.average())}/100"
         } else {
             baseRabbit.sopScore.ifEmpty { "0/100" }
         }
 
-        // Fetch parents recursively to 3rd generation
+        // Fetch weigh-ins
+        val weighIns = try {
+            db.collection("weigh_ins")
+                .whereEqualTo("rabbitId", rabbitId)
+                .get()
+                .await()
+                .documents.mapNotNull { d ->
+                    val dateVal = d.get("date")
+                    val dateStr = when (dateVal) {
+                        is Number -> java.text.SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(java.util.Date(dateVal.toLong()))
+                        is String -> dateVal
+                        else -> ""
+                    }
+                    WeighIn(date = dateStr, weight = d.get("weight")?.toString() ?: "")
+                }
+        } catch (e: Exception) { emptyList() }
+
+        // Fetch medical
+        val medical = try {
+            db.collection("medical")
+                .whereEqualTo("rabbitId", rabbitId)
+                .get()
+                .await()
+                .documents.mapNotNull { d ->
+                    val dateVal = d.get("date")
+                    val dateStr = when (dateVal) {
+                        is Number -> java.text.SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(java.util.Date(dateVal.toLong()))
+                        is String -> dateVal
+                        else -> ""
+                    }
+                    MedicalRecord(
+                        date = dateStr,
+                        note = d.getString("treatment") ?: d.getString("notes") ?: ""
+                    )
+                }
+        } catch (e: Exception) { emptyList() }
+
         return baseRabbit.copy(
             id = rabbitId,
-            sopScore = latestScore,
+            sopScore = averageScore,
             sopEvaluations = evaluations,
+            weighIns = weighIns,
+            medicalRecords = medical,
             pedigree = Pedigree(
                 father = getRelative(doc.getString("fatherId") ?: doc.getString("sireId") ?: doc.getString("FatherId")),
                 mother = getRelative(doc.getString("motherId") ?: doc.getString("damId") ?: doc.getString("MotherId"))
             )
         )
+    }
+
+    private suspend fun fetchSopEvaluations(rabbitId: String): List<SopEvaluation> {
+        return try {
+            val evalsSnapshot = db.collection("sop_evaluations")
+                .whereEqualTo("rabbitId", rabbitId)
+                .get()
+                .await()
+            
+            evalsSnapshot.documents.mapNotNull { evalDoc ->
+                val checklistRaw = evalDoc.get("checklist") as? Map<*, *>
+                val checkedItemsRaw = evalDoc.get("checkedItems") as? List<*>
+                
+                val checklist = mutableMapOf<String, String>()
+                checkedItemsRaw?.forEachIndexed { index, b -> checklist["Item $index"] = b.toString() }
+                checklistRaw?.forEach { (k, v) -> checklist[k.toString()] = v.toString() }
+
+                val dateVal = evalDoc.get("date")
+                val dateStr = when (dateVal) {
+                    is Number -> java.text.SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(java.util.Date(dateVal.toLong()))
+                    is String -> dateVal
+                    else -> evalDoc.id
+                }
+
+                SopEvaluation(
+                    date = dateStr,
+                    score = evalDoc.get("bodyScore")?.toString() ?: evalDoc.getString("score") ?: evalDoc.get("totalScore")?.toString() ?: "0",
+                    checklist = checklist
+                )
+            }.sortedByDescending { it.date }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     private suspend fun getRelative(id: String?, depth: Int = 1): RabbitRelative? {
@@ -272,22 +306,22 @@ class FirebaseRepository {
 
     suspend fun getRabbitsForSale(): List<Rabbit> {
         return try {
-            // 1. Look specifically in the 'forsale' collection as per the updated protocol
+            // Optimized parallel fetch
             val forsaleSnapshot = db.collection("forsale").get().await()
-            val fromForsale = forsaleSnapshot.documents.map { doc ->
-                getRabbitWithPedigree(doc.id) // Get full enriched data including SOPs
+            coroutineScope {
+                forsaleSnapshot.documents.map { doc ->
+                    async {
+                        val base = mapDocumentToRabbit(doc) ?: Rabbit(id = doc.id)
+                        // Fetch latest SOP score for the list
+                        val evaluations = fetchSopEvaluations(doc.id)
+                        val latestScore = if (evaluations.isNotEmpty()) {
+                            val score = evaluations.first().score
+                            if (score.contains("/")) score else "$score/100"
+                        } else "0/100"
+                        base.copy(sopScore = latestScore)
+                    }
+                }.awaitAll()
             }
-
-            // 2. Keep the main 'rabbits' collection check as a fallback
-            val mainSnapshot = db.collection("rabbits")
-                .whereEqualTo("forSale", true)
-                .get()
-                .await()
-            val fromMain = mainSnapshot.documents.map { doc ->
-                getRabbitWithPedigree(doc.id)
-            }
-
-            (fromForsale + fromMain).distinctBy { it.id }
         } catch (e: Exception) {
             emptyList()
         }
@@ -313,25 +347,11 @@ class FirebaseRepository {
             }
 
             val scoreVal = doc.get("arbaScore") ?: doc.get("score")
-            val sopScoreVal = doc.getString("sopScore") ?: ""
             
-            // Map SOP evaluations if they exist
-            val sopList = try {
-                (doc.get("sopEvaluations") as? List<Map<String, Any>>)?.map { eval ->
-                    SopEvaluation(
-                        date = eval["date"] as? String ?: "",
-                        score = eval["score"] as? String ?: "",
-                        checklist = (eval["checklist"] as? Map<String, String>) ?: emptyMap()
-                    )
-                } ?: emptyList()
-            } catch (e: Exception) {
-                emptyList()
-            }
-
             val dobVal = doc.get("dateOfBirth") ?: doc.get("birthDate")
             val birthDateStr = when (dobVal) {
                 is Number -> {
-                    val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
+                    val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
                     sdf.format(java.util.Date(dobVal.toLong()))
                 }
                 is String -> dobVal
@@ -355,9 +375,7 @@ class FirebaseRepository {
                 generation = finalGen,
                 status = doc.getString("status") ?: "",
                 source = doc.getString("source") ?: "",
-                notes = doc.getString("notes") ?: "",
-                sopScore = sopScoreVal,
-                sopEvaluations = sopList
+                notes = doc.getString("notes") ?: ""
             )
         } catch (e: Exception) {
             // Create a basic rabbit if full mapping fails to avoid empty screen
@@ -377,8 +395,10 @@ class FirebaseRepository {
                 .get()
                 .await()
             
-            snapshot.documents.map { doc ->
-                getRabbitWithPedigree(doc.id) // Get latest data from source
+            coroutineScope {
+                snapshot.documents.map { doc ->
+                    async { getFullRabbitData(doc.id) }
+                }.awaitAll()
             }
         } catch (e: Exception) {
             emptyList()
@@ -396,6 +416,15 @@ class FirebaseRepository {
                 .await()
         } catch (e: Exception) {
             // Log error
+        }
+    }
+
+    suspend fun getMarketplaceItems(): List<MarketplaceItem> {
+        return try {
+            val snapshot = db.collection("marketplace").get().await()
+            snapshot.toObjects(MarketplaceItem::class.java)
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 }
